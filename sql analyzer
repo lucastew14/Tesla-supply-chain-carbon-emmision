@@ -1,0 +1,136 @@
+-- TESLA SUPPLY CHAIN CARBON EMISSIONS ANALYSIS (2025 Edition)
+-- Created by: Tewolde
+-- Description: A SQL-based analytics project evaluating Tesla's supply chain-related carbon emissions, covering materials, transportation, and factory-level output.
+
+-- Clean existing tables if needed
+DROP TABLE IF EXISTS ComponentEmissions;
+DROP TABLE IF EXISTS TeslaFactories;
+DROP TABLE IF EXISTS TransportEmissions;
+DROP TABLE IF EXISTS TeslaVehicles;
+
+-- Tesla's gigafactories
+CREATE TABLE TeslaFactories (
+    factory_id INT PRIMARY KEY,
+    location VARCHAR(100),
+    energy_profile VARCHAR(50),
+    annual_capacity INT
+);
+
+-- Each vehicle manufactured by Tesla
+CREATE TABLE TeslaVehicles (
+    vehicle_id INT PRIMARY KEY,
+    model VARCHAR(50),
+    factory_id INT,
+    production_date DATE,
+    FOREIGN KEY (factory_id) REFERENCES TeslaFactories(factory_id)
+);
+
+-- Emissions from materials used per Tesla vehicle
+CREATE TABLE ComponentEmissions (
+    vehicle_id INT,
+    component VARCHAR(50),
+    co2_kg DECIMAL(6,2),
+    FOREIGN KEY (vehicle_id) REFERENCES TeslaVehicles(vehicle_id)
+);
+
+-- Emissions from logistics/delivery of Tesla vehicles
+CREATE TABLE TransportEmissions (
+    transport_id INT PRIMARY KEY,
+    vehicle_id INT,
+    method VARCHAR(50),
+    co2_kg DECIMAL(6,2),
+    FOREIGN KEY (vehicle_id) REFERENCES TeslaVehicles(vehicle_id)
+);
+
+-- Sample factory data
+INSERT INTO TeslaFactories VALUES
+(1, 'Fremont, California', 'mixed', 300000),
+(2, 'Berlin-Brandenburg', 'renewable', 200000),
+(3, 'Shanghai', 'coal-intensive', 400000);
+
+-- Sample Tesla vehicle production
+INSERT INTO TeslaVehicles VALUES
+(101, 'Model 3', 1, '2025-01-15'),
+(102, 'Model Y', 2, '2025-02-20'),
+(103, 'Cybertruck', 3, '2025-03-10');
+
+-- Material/component emissions
+INSERT INTO ComponentEmissions VALUES
+(101, 'Battery Pack', 1800.00),
+(101, 'Aluminum Frame', 250.00),
+(102, 'Battery Pack', 1500.00),
+(102, 'Glass Roof', 100.00),
+(103, 'Battery Pack', 2000.00),
+(103, 'Steel Frame', 300.00);
+
+-- Delivery logistics emissions
+INSERT INTO TransportEmissions VALUES
+(1, 101, 'truck', 120.00),
+(2, 102, 'rail', 60.00),
+(3, 103, 'cargo ship', 200.00);
+
+-- ------------------------------
+-- 📊 TESLA SUPPLY CHAIN EMISSIONS INSIGHTS
+-- ------------------------------
+
+-- 1. Total emissions for each Tesla vehicle
+SELECT v.vehicle_id, v.model,
+       SUM(c.co2_kg) AS material_emissions,
+       t.co2_kg AS transport_emissions,
+       SUM(c.co2_kg) + t.co2_kg AS total_emissions
+FROM TeslaVehicles v
+JOIN ComponentEmissions c ON v.vehicle_id = c.vehicle_id
+JOIN TransportEmissions t ON v.vehicle_id = t.vehicle_id
+GROUP BY v.vehicle_id, v.model, t.co2_kg;
+
+-- 2. Average carbon footprint per Tesla model
+SELECT model,
+       ROUND(AVG(material_emissions + transport_emissions), 2) AS avg_total_emissions
+FROM (
+    SELECT v.model,
+           SUM(c.co2_kg) AS material_emissions,
+           t.co2_kg AS transport_emissions
+    FROM TeslaVehicles v
+    JOIN ComponentEmissions c ON v.vehicle_id = c.vehicle_id
+    JOIN TransportEmissions t ON v.vehicle_id = t.vehicle_id
+    GROUP BY v.vehicle_id, v.model, t.co2_kg
+) AS model_emissions
+GROUP BY model;
+
+-- 3. Total emissions per Tesla factory
+SELECT f.location, f.energy_profile, COUNT(v.vehicle_id) AS vehicles_built,
+       ROUND(SUM(c.co2_kg) + SUM(t.co2_kg), 2) AS total_emissions
+FROM TeslaFactories f
+JOIN TeslaVehicles v ON f.factory_id = v.factory_id
+JOIN ComponentEmissions c ON v.vehicle_id = c.vehicle_id
+JOIN TransportEmissions t ON v.vehicle_id = t.vehicle_id
+GROUP BY f.location, f.energy_profile;
+
+-- 4. Emissions by transportation method
+SELECT method, ROUND(SUM(co2_kg), 2) AS total_by_method
+FROM TransportEmissions
+GROUP BY method;
+
+-- 5. Component contributing the most CO₂
+SELECT component, ROUND(SUM(co2_kg), 2) AS total_emissions
+FROM ComponentEmissions
+GROUP BY component
+ORDER BY total_emissions DESC
+LIMIT 1;
+
+-- 6. Factory with lowest average emissions per Tesla vehicle
+SELECT f.location,
+       ROUND(AVG(material_emissions + transport_emissions), 2) AS avg_emissions_per_vehicle
+FROM (
+    SELECT v.vehicle_id, v.factory_id,
+           SUM(c.co2_kg) AS material_emissions,
+           t.co2_kg AS transport_emissions
+    FROM TeslaVehicles v
+    JOIN ComponentEmissions c ON v.vehicle_id = c.vehicle_id
+    JOIN TransportEmissions t ON v.vehicle_id = t.vehicle_id
+    GROUP BY v.vehicle_id, v.factory_id, t.co2_kg
+) derived
+JOIN TeslaFactories f ON derived.factory_id = f.factory_id
+GROUP BY f.location
+ORDER BY avg_emissions_per_vehicle ASC
+LIMIT 1;
